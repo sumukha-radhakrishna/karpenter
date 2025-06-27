@@ -158,6 +158,11 @@ spec:
                   required:
                     - consolidateAfter
                   type: object
+                  x-kubernetes-validations:
+                    - message: consolidationPolicy cannot be specified when replicas is set
+                      rule: '!has(self.consolidationPolicy) || !has(parent.replicas)'
+                    - message: consolidateAfter cannot be specified (except for the default value '0s') when replicas is set
+                      rule: '!(has(self.consolidateAfter) && self.consolidateAfter != ''0s'' && self.consolidateAfter != '''') || !has(parent.replicas)'
                 limits:
                   additionalProperties:
                     anyOf:
@@ -167,6 +172,22 @@ spec:
                     x-kubernetes-int-or-string: true
                   description: Limits define a set of bounds for provisioning capacity.
                   type: object
+                  x-kubernetes-validations:
+                    - message: limits cannot be specified when replicas is set
+                      rule: '!has(parent.replicas)'
+                replicas:
+                  description: |-
+                    Replicas is the desired number of nodes for the NodePool. When specified, the NodePool will
+                    maintain this fixed number of replicas rather than scaling based on pod demand.
+                    When replicas is set, the following fields cannot be specified:
+                    - disruption.consolidationPolicy
+                    - disruption.consolidateAfter (except for the default value "0s")
+                    - limits
+                    - weight
+                    Note that the Disruption struct itself is allowed, but the specific fields above are restricted.
+                  format: int32
+                  minimum: 0
+                  type: integer
                 template:
                   description: |-
                     Template contains the template of possibilities for the provisioning logic to launch a NodeClaim with.
@@ -436,9 +457,21 @@ spec:
                   maximum: 100
                   minimum: 1
                   type: integer
+                  x-kubernetes-validations:
+                    - message: weight cannot be specified when replicas is set
+                      rule: '!has(self) || !has(parent.replicas)'
               required:
                 - template
               type: object
+              x-kubernetes-validations:
+                - message: weight cannot be specified when replicas is set
+                  rule: '!has(self.replicas) || !has(self.weight)'
+                - message: disruption.consolidationPolicy cannot be specified when replicas is set
+                  rule: '!has(self.replicas) || !(has(self.disruption) && has(self.disruption.consolidationPolicy))'
+                - message: disruption.consolidateAfter cannot be specified (except for the default value '0s') when replicas is set
+                  rule: '!has(self.replicas) || !(has(self.disruption) && has(self.disruption.consolidateAfter) && self.disruption.consolidateAfter != ''0s'' && self.disruption.consolidateAfter != ”)'
+                - message: limits cannot be specified when replicas is set
+                  rule: '!has(self.replicas) || !has(self.limits)'
             status:
               description: NodePoolStatus defines the observed state of NodePool
               properties:

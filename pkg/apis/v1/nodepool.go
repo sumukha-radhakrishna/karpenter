@@ -36,6 +36,10 @@ import (
 // launch nodes in response to pods that are unschedulable. A single nodepool
 // is capable of managing a diverse set of nodes. Node properties are determined
 // from a combination of nodepool and pod scheduling constraints.
+// +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.weight)",message="weight cannot be specified when replicas is set"
+// +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !(has(self.disruption) && has(self.disruption.consolidationPolicy))",message="disruption.consolidationPolicy cannot be specified when replicas is set"
+// +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !(has(self.disruption) && has(self.disruption.consolidateAfter) && self.disruption.consolidateAfter != '0s' && self.disruption.consolidateAfter != ”)",message="disruption.consolidateAfter cannot be specified (except for the default value '0s') when replicas is set"
+// +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.limits)",message="limits cannot be specified when replicas is set"
 type NodePoolSpec struct {
 	// Template contains the template of possibilities for the provisioning logic to launch a NodeClaim with.
 	// NodeClaims launched from this NodePool will often be further constrained than the template specifies.
@@ -44,9 +48,12 @@ type NodePoolSpec struct {
 	// Disruption contains the parameters that relate to Karpenter's disruption logic
 	// +kubebuilder:default:={consolidateAfter: "0s"}
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="!has(self.consolidationPolicy) || !has(parent.replicas)",message="consolidationPolicy cannot be specified when replicas is set"
+	// +kubebuilder:validation:XValidation:rule="!(has(self.consolidateAfter) && self.consolidateAfter != '0s' && self.consolidateAfter != '') || !has(parent.replicas)",message="consolidateAfter cannot be specified (except for the default value '0s') when replicas is set"
 	Disruption Disruption `json:"disruption"`
 	// Limits define a set of bounds for provisioning capacity.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="!has(parent.replicas)",message="limits cannot be specified when replicas is set"
 	Limits Limits `json:"limits,omitempty"`
 	// Weight is the priority given to the nodepool during scheduling. A higher
 	// numerical weight indicates that this nodepool will be ordered
@@ -55,7 +62,19 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:Minimum:=1
 	// +kubebuilder:validation:Maximum:=100
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="!has(self) || !has(parent.replicas)",message="weight cannot be specified when replicas is set"
 	Weight *int32 `json:"weight,omitempty"`
+	// Replicas is the desired number of nodes for the NodePool. When specified, the NodePool will
+	// maintain this fixed number of replicas rather than scaling based on pod demand.
+	// When replicas is set, the following fields cannot be specified:
+	// - disruption.consolidationPolicy
+	// - disruption.consolidateAfter (except for the default value "0s")
+	// - limits
+	// - weight
+	// Note that the Disruption struct itself is allowed, but the specific fields above are restricted.
+	// +kubebuilder:validation:Minimum:=0
+	// +optional
+	Replicas *int32 `json:"replicas,omitempty"`
 }
 
 type Disruption struct {
