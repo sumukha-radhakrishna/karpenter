@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -34,8 +35,8 @@ var _ = Describe("Underutilized", func() {
 	var nodeClaim *v1.NodeClaim
 	BeforeEach(func() {
 		nodePool = test.NodePool()
-		nodePool.Spec.Disruption.ConsolidationPolicy = v1.ConsolidationPolicyWhenEmptyOrUnderutilized
-		nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("1m")
+		nodePool.Spec.Disruption.ConsolidationPolicy = lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized)
+		nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("1m"))
 		nodeClaim, _ = test.NodeClaimAndNode(v1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
@@ -123,7 +124,7 @@ var _ = Describe("Underutilized", func() {
 		Expect(nodeClaim.StatusConditions().Get(v1.ConditionTypeConsolidatable)).To(BeNil())
 	})
 	It("should remove the status condition from the nodeClaim when consolidateAfter is never", func() {
-		nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("Never")
+		nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("Never"))
 		nodeClaim.StatusConditions().SetTrue(v1.ConditionTypeConsolidatable)
 		ExpectApplied(ctx, env.Client, nodePool, nodeClaim)
 

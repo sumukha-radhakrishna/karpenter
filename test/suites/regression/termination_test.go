@@ -43,8 +43,8 @@ var _ = Describe("Termination", func() {
 		var selector labels.Selector
 		var numPods int
 		BeforeEach(func() {
-			nodePool.Spec.Disruption.ConsolidationPolicy = karpv1.ConsolidationPolicyWhenEmpty
-			nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
+			nodePool.Spec.Disruption.ConsolidationPolicy = lo.ToPtr(karpv1.ConsolidationPolicyWhenEmpty)
+			nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(karpv1.MustParseNillableDuration("0s"))
 
 			numPods = 1
 			dep = test.Deployment(test.DeploymentOptions{
@@ -102,7 +102,7 @@ var _ = Describe("Termination", func() {
 			})
 		})
 		It("should terminate an empty node", func() {
-			nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("10s")
+			nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(karpv1.MustParseNillableDuration("10s"))
 
 			const numPods = 1
 			deployment := test.Deployment(test.DeploymentOptions{Replicas: numPods})
@@ -121,7 +121,7 @@ var _ = Describe("Termination", func() {
 			env.EventuallyExpectConsolidatable(nodeClaim)
 
 			By("waiting for the nodeclaim to deprovision when past its ConsolidateAfter timeout of 0")
-			nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
+			nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(karpv1.MustParseNillableDuration("0s"))
 			env.ExpectUpdated(nodePool)
 
 			env.EventuallyExpectNotFound(nodeClaim, node)

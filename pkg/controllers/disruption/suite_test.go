@@ -169,8 +169,8 @@ var _ = Describe("Simulate Scheduling", func() {
 		nodePool = test.NodePool(v1.NodePool{
 			Spec: v1.NodePoolSpec{
 				Disruption: v1.Disruption{
-					ConsolidateAfter:    v1.MustParseNillableDuration("0s"),
-					ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
+					ConsolidateAfter:    lo.ToPtr(v1.MustParseNillableDuration("0s")),
+					ConsolidationPolicy: lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized),
 				},
 			},
 		})
@@ -210,7 +210,7 @@ var _ = Describe("Simulate Scheduling", func() {
 				},
 			},
 		})
-		nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("Never")
+		nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("Never"))
 		ExpectApplied(ctx, env.Client, pod)
 		ExpectManualBinding(ctx, env.Client, pod, nodes[0])
 
@@ -288,7 +288,7 @@ var _ = Describe("Simulate Scheduling", func() {
 			},
 		})
 
-		nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("Never")
+		nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("Never"))
 		nodePool.Spec.Disruption.Budgets = []v1.Budget{{Nodes: "3"}}
 		ExpectApplied(ctx, env.Client, nodePool)
 
@@ -594,7 +594,7 @@ var _ = Describe("Disruption Taints", func() {
 				},
 			},
 		})
-		nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("Never")
+		nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("Never"))
 		node.Spec.Taints = append(node.Spec.Taints, v1.DisruptedNoScheduleTaint)
 		nodeClaim.StatusConditions().SetTrue(v1.ConditionTypeDisruptionReason)
 		ExpectApplied(ctx, env.Client, nodePool, nodeClaim, node, pod)
@@ -613,7 +613,7 @@ var _ = Describe("Disruption Taints", func() {
 		Expect(nodeClaims[0].StatusConditions().Get(v1.ConditionTypeDisruptionReason)).To(BeNil())
 	})
 	It("should add and remove taints from NodeClaims that fail to disrupt", func() {
-		nodePool.Spec.Disruption.ConsolidationPolicy = v1.ConsolidationPolicyWhenEmptyOrUnderutilized
+		nodePool.Spec.Disruption.ConsolidationPolicy = lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized)
 		pod := test.Pod(test.PodOptions{
 			ResourceRequirements: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
@@ -1863,8 +1863,8 @@ var _ = Describe("Metrics", func() {
 		nodePool = test.NodePool(v1.NodePool{
 			Spec: v1.NodePoolSpec{
 				Disruption: v1.Disruption{
-					ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
-					ConsolidateAfter:    v1.MustParseNillableDuration("0s"),
+					ConsolidationPolicy: lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized),
+					ConsolidateAfter:    lo.ToPtr(v1.MustParseNillableDuration("0s")),
 					// Disrupt away!
 					Budgets: []v1.Budget{{
 						Nodes: "100%",

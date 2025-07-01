@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -129,8 +130,8 @@ var _ = Describe("Disruption", func() {
 	})
 	It("should set multiple disruption conditions simultaneously", func() {
 		cp.Drifted = "drifted"
-		nodePool.Spec.Disruption.ConsolidationPolicy = v1.ConsolidationPolicyWhenEmpty
-		nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("30s")
+		nodePool.Spec.Disruption.ConsolidationPolicy = lo.ToPtr(v1.ConsolidationPolicyWhenEmpty)
+		nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("30s"))
 		ExpectApplied(ctx, env.Client, nodePool, nodeClaim, node)
 		ExpectMakeNodeClaimsInitialized(ctx, env.Client, nodeClaim)
 
@@ -143,7 +144,7 @@ var _ = Describe("Disruption", func() {
 		Expect(nodeClaim.StatusConditions().Get(v1.ConditionTypeConsolidatable).IsTrue()).To(BeTrue())
 	})
 	It("should remove multiple disruption conditions simultaneously", func() {
-		nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("Never")
+		nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("Never"))
 
 		nodeClaim.StatusConditions().SetTrue(v1.ConditionTypeDrifted)
 		nodeClaim.StatusConditions().SetTrue(v1.ConditionTypeConsolidatable)

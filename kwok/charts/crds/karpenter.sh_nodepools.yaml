@@ -140,6 +140,7 @@ spec:
                         - message: '''schedule'' must be set with ''duration'''
                           rule: self.all(x, has(x.schedule) == has(x.duration))
                     consolidateAfter:
+                      default: 0s
                       description: |-
                         ConsolidateAfter is the duration the controller will wait
                         before attempting to terminate nodes that are underutilized.
@@ -155,8 +156,6 @@ spec:
                         - WhenEmpty
                         - WhenEmptyOrUnderutilized
                       type: string
-                  required:
-                    - consolidateAfter
                   type: object
                 limits:
                   additionalProperties:
@@ -167,6 +166,19 @@ spec:
                     x-kubernetes-int-or-string: true
                   description: Limits define a set of bounds for provisioning capacity.
                   type: object
+                replicas:
+                  description: |-
+                    Replicas is the desired number of nodes for the NodePool. When specified, the NodePool will
+                    maintain this fixed number of replicas rather than scaling based on pod demand.
+                    When replicas is set, the following fields cannot be specified:
+                    - disruption.consolidationPolicy
+                    - disruption.consolidateAfter
+                    - limits
+                    - weight
+                    Note that the Disruption struct itself is allowed, but the specific fields above are restricted.
+                  format: int32
+                  minimum: 0
+                  type: integer
                 template:
                   description: |-
                     Template contains the template of possibilities for the provisioning logic to launch a NodeClaim with.
@@ -439,6 +451,15 @@ spec:
               required:
                 - template
               type: object
+              x-kubernetes-validations:
+                - message: consolidationPolicy must not be set when replicas is set
+                  rule: '!(has(self.replicas)) || !(has(self.disruption.consolidationPolicy))'
+                - message: consolidateAfter must not be set when replicas is set
+                  rule: '!(has(self.replicas)) || !(has(self.disruption.consolidateAfter))'
+                - message: When replicas is set, limits (limits.cpu and limits.memory) must not be set
+                  rule: '!(has(self.replicas)) || (!has(self.limits) || (!has(self.limits.cpu) && !has(self.limits.memory)))'
+                - message: When replicas is set, weight must not be set
+                  rule: '!(has(self.replicas)) || (!has(self.weight))'
             status:
               description: NodePoolStatus defines the observed state of NodePool
               properties:

@@ -48,8 +48,8 @@ var _ = Describe("SingleNodeConsolidation", func() {
 			},
 			Spec: v1.NodePoolSpec{
 				Disruption: v1.Disruption{
-					ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
-					ConsolidateAfter:    v1.MustParseNillableDuration("0s"),
+					ConsolidationPolicy: lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized),
+					ConsolidateAfter:    lo.ToPtr(v1.MustParseNillableDuration("0s")),
 				},
 			},
 		})
@@ -59,8 +59,8 @@ var _ = Describe("SingleNodeConsolidation", func() {
 			},
 			Spec: v1.NodePoolSpec{
 				Disruption: v1.Disruption{
-					ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
-					ConsolidateAfter:    v1.MustParseNillableDuration("0s"),
+					ConsolidationPolicy: lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized),
+					ConsolidateAfter:    lo.ToPtr(v1.MustParseNillableDuration("0s")),
 				},
 			},
 		})
@@ -70,8 +70,8 @@ var _ = Describe("SingleNodeConsolidation", func() {
 			},
 			Spec: v1.NodePoolSpec{
 				Disruption: v1.Disruption{
-					ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
-					ConsolidateAfter:    v1.MustParseNillableDuration("0s"),
+					ConsolidationPolicy: lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized),
+					ConsolidateAfter:    lo.ToPtr(v1.MustParseNillableDuration("0s")),
 				},
 			},
 		})

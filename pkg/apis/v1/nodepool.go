@@ -36,6 +36,10 @@ import (
 // launch nodes in response to pods that are unschedulable. A single nodepool
 // is capable of managing a diverse set of nodes. Node properties are determined
 // from a combination of nodepool and pod scheduling constraints.
+// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || !(has(self.disruption.consolidationPolicy))",message="consolidationPolicy must not be set when replicas is set"
+// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || !(has(self.disruption.consolidateAfter))",message="consolidateAfter must not be set when replicas is set"
+// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || (!has(self.limits) || (!has(self.limits.cpu) && !has(self.limits.memory)))",message="When replicas is set, limits (limits.cpu and limits.memory) must not be set"
+// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || (!has(self.weight))",message="When replicas is set, weight must not be set"
 type NodePoolSpec struct {
 	// Template contains the template of possibilities for the provisioning logic to launch a NodeClaim with.
 	// NodeClaims launched from this NodePool will often be further constrained than the template specifies.
@@ -56,6 +60,17 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:Maximum:=100
 	// +optional
 	Weight *int32 `json:"weight,omitempty"`
+	// Replicas is the desired number of nodes for the NodePool. When specified, the NodePool will
+	// maintain this fixed number of replicas rather than scaling based on pod demand.
+	// When replicas is set, the following fields cannot be specified:
+	// - disruption.consolidationPolicy
+	// - disruption.consolidateAfter
+	// - limits
+	// - weight
+	// Note that the Disruption struct itself is allowed, but the specific fields above are restricted.
+	// +kubebuilder:validation:Minimum:=0
+	// +optional
+	Replicas *int32 `json:"replicas,omitempty"`
 }
 
 type Disruption struct {
@@ -64,15 +79,16 @@ type Disruption struct {
 	// Refer to ConsolidationPolicy for how underutilization is considered.
 	// +kubebuilder:validation:Pattern=`^(([0-9]+(s|m|h))+|Never)$`
 	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:default:="0s"
 	// +kubebuilder:validation:Schemaless
-	// +required
-	ConsolidateAfter NillableDuration `json:"consolidateAfter"`
+	// +optional
+	ConsolidateAfter *NillableDuration `json:"consolidateAfter,omitempty"`
 	// ConsolidationPolicy describes which nodes Karpenter can disrupt through its consolidation
 	// algorithm. This policy defaults to "WhenEmptyOrUnderutilized" if not specified
 	// +kubebuilder:default:="WhenEmptyOrUnderutilized"
 	// +kubebuilder:validation:Enum:={WhenEmpty,WhenEmptyOrUnderutilized}
 	// +optional
-	ConsolidationPolicy ConsolidationPolicy `json:"consolidationPolicy,omitempty"`
+	ConsolidationPolicy *ConsolidationPolicy `json:"consolidationPolicy,omitempty"`
 	// Budgets is a list of Budgets.
 	// If there are multiple active budgets, Karpenter uses
 	// the most restrictive value. If left undefined,

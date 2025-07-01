@@ -58,8 +58,8 @@ var _ = Describe("Chaos", func() {
 					Values:   []string{v1.CapacityTypeSpot},
 				},
 			})
-			nodePool.Spec.Disruption.ConsolidationPolicy = v1.ConsolidationPolicyWhenEmptyOrUnderutilized
-			nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("0s")
+			nodePool.Spec.Disruption.ConsolidationPolicy = lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized)
+			nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("0s"))
 
 			numPods := 1
 			dep := test.Deployment(test.DeploymentOptions{
@@ -89,8 +89,8 @@ var _ = Describe("Chaos", func() {
 			ctx, cancel := context.WithCancel(env.Context)
 			defer cancel()
 
-			nodePool.Spec.Disruption.ConsolidationPolicy = v1.ConsolidationPolicyWhenEmpty
-			nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("30s")
+			nodePool.Spec.Disruption.ConsolidationPolicy = lo.ToPtr(v1.ConsolidationPolicyWhenEmpty)
+			nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("30s"))
 			numPods := 1
 			dep := test.Deployment(test.DeploymentOptions{
 				Replicas: int32(numPods),

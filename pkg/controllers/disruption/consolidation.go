@@ -111,7 +111,7 @@ func (c *consolidation) ShouldDisrupt(_ context.Context, cn *Candidate) bool {
 	// If we don't have the "WhenEmptyOrUnderutilized" policy set, we should not do any of the consolidation methods, but
 	// we should also not fire an event here to users since this can be confusing when the field on the NodePool
 	// is named "consolidationPolicy"
-	if cn.NodePool.Spec.Disruption.ConsolidationPolicy != v1.ConsolidationPolicyWhenEmptyOrUnderutilized {
+	if cn.NodePool.Spec.Disruption.ConsolidationPolicy != lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized) {
 		c.recorder.Publish(disruptionevents.Unconsolidatable(cn.Node, cn.NodeClaim, fmt.Sprintf("NodePool %q has non-empty consolidation disabled", cn.NodePool.Name))...)
 		return false
 	}

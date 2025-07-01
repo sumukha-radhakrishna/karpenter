@@ -20,13 +20,45 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/samber/lo"
 	"go.uber.org/multierr"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // RuntimeValidate will be used to validate any part of the CRD that can not be validated at CRD creation
 func (in *NodePool) RuntimeValidate(ctx context.Context) (errs error) {
-	errs = multierr.Combine(in.Spec.Template.validateLabels(), in.Spec.Template.Spec.validateTaints(), in.Spec.Template.Spec.validateRequirements(ctx), in.Spec.Template.validateRequirementsNodePoolKeyDoesNotExist())
+	errs = multierr.Combine(
+		in.Spec.Template.validateLabels(),
+		in.Spec.Template.Spec.validateTaints(),
+		in.Spec.Template.Spec.validateRequirements(ctx),
+		in.Spec.Template.validateRequirementsNodePoolKeyDoesNotExist(),
+		in.validateReplicasConstraints(),
+	)
+	return errs
+}
+
+// validateReplicasConstraints validates that when replicas is set, incompatible fields are not set
+func (in *NodePool) validateReplicasConstraints() (errs error) {
+	if in.Spec.Replicas == nil {
+		return nil
+	}
+
+	if in.Spec.Weight != nil {
+		errs = multierr.Append(errs, fmt.Errorf("weight cannot be specified when replicas is set"))
+	}
+
+	if in.Spec.Disruption.ConsolidationPolicy != nil || in.Spec.Disruption.ConsolidationPolicy != lo.ToPtr(ConsolidationPolicyWhenEmptyOrUnderutilized) {
+		errs = multierr.Append(errs, fmt.Errorf("disruption.consolidationPolicy cannot be specified when replicas is set"))
+	}
+
+	if in.Spec.Disruption.ConsolidateAfter != nil {
+		errs = multierr.Append(errs, fmt.Errorf("disruption.consolidateAfter cannot be specified when replicas is set"))
+	}
+
+	if in.Spec.Limits != nil {
+		errs = multierr.Append(errs, fmt.Errorf("limits cannot be specified when replicas is set"))
+	}
+
 	return errs
 }
 

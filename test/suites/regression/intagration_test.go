@@ -44,8 +44,8 @@ var _ = Describe("Integration", func() {
 		var dep *appsv1.Deployment
 
 		BeforeEach(func() {
-			nodePool.Spec.Disruption.ConsolidationPolicy = v1.ConsolidationPolicyWhenEmptyOrUnderutilized
-			nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("0s")
+			nodePool.Spec.Disruption.ConsolidationPolicy = lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized)
+			nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("0s"))
 			priorityclass = &schedulingv1.PriorityClass{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "high-priority-daemonsets",
@@ -265,13 +265,13 @@ var _ = Describe("Integration", func() {
 				Expect(env.Client.Create(env.Context, nodePool)).ToNot(Succeed())
 			})
 			It("should error when consolidateAfter is negative", func() {
-				nodePool.Spec.Disruption.ConsolidationPolicy = v1.ConsolidationPolicyWhenEmpty
-				nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("-1s")
+				nodePool.Spec.Disruption.ConsolidationPolicy = lo.ToPtr(v1.ConsolidationPolicyWhenEmpty)
+				nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("-1s"))
 				Expect(env.Client.Create(env.Context, nodePool)).ToNot(Succeed())
 			})
 			It("should succeed when ConsolidationPolicy=WhenEmptyOrUnderutilized is used with consolidateAfter", func() {
-				nodePool.Spec.Disruption.ConsolidationPolicy = v1.ConsolidationPolicyWhenEmptyOrUnderutilized
-				nodePool.Spec.Disruption.ConsolidateAfter = v1.MustParseNillableDuration("1m")
+				nodePool.Spec.Disruption.ConsolidationPolicy = lo.ToPtr(v1.ConsolidationPolicyWhenEmptyOrUnderutilized)
+				nodePool.Spec.Disruption.ConsolidateAfter = lo.ToPtr(v1.MustParseNillableDuration("1m"))
 				Expect(env.Client.Create(env.Context, nodePool)).To(Succeed())
 			})
 			It("should error when minValues for a requirement key is negative", func() {
