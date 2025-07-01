@@ -138,3 +138,4 @@ However, this approach was rejected because:
 - Requires duplicate documentation
 
 The better approach is to extend the existing NodePool API since the differences represent different modes of the same fundamental abstraction rather than entirely separate concepts.
+
