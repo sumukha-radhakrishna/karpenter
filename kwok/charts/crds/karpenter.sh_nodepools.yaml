@@ -180,7 +180,7 @@ spec:
                     - limits
                     - weight
                     Note that the Disruption struct itself is allowed, but the specific fields above are restricted.
-                  format: int32
+                  format: int64
                   minimum: 0
                   type: integer
                 template:

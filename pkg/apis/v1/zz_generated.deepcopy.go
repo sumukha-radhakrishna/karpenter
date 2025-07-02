@@ -428,7 +428,7 @@ func (in *NodePoolSpec) DeepCopyInto(out *NodePoolSpec) {
 	}
 	if in.Replicas != nil {
 		in, out := &in.Replicas, &out.Replicas
-		*out = new(int32)
+		*out = new(int64)
 		**out = **in
 	}
 }

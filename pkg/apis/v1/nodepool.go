@@ -70,7 +70,7 @@ type NodePoolSpec struct {
 	// Note that the Disruption struct itself is allowed, but the specific fields above are restricted.
 	// +kubebuilder:validation:Minimum:=0
 	// +optional
-	Replicas *int32 `json:"replicas,omitempty"`
+	Replicas *int64 `json:"replicas,omitempty"`
 }
 
 type Disruption struct {
