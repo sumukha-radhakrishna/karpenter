@@ -28,7 +28,7 @@ import (
 
 	v1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	dynamicprovisioning "sigs.k8s.io/karpenter/pkg/controllers/provisioning/dynamic"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 )
@@ -61,7 +61,7 @@ type validation struct {
 	cluster       *state.Cluster
 	kubeClient    client.Client
 	cloudProvider cloudprovider.CloudProvider
-	provisioner   *provisioning.Provisioner
+	provisioner   *dynamicprovisioning.Provisioner
 	recorder      events.Recorder
 	queue         *Queue
 	reason        v1.DisruptionReason

@@ -4520,7 +4520,7 @@ var _ = Describe("Consolidation", func() {
 
 			// Add a new pending pod that should schedule while node is not yet deleted
 			pod = test.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, ncProv, pod)
 			Expect(ExpectNodeClaims(ctx, env.Client)).To(HaveLen(2))
 			Expect(ExpectNodes(ctx, env.Client)).To(HaveLen(2))
 			ExpectScheduled(ctx, env.Client, pod)
@@ -4557,7 +4557,7 @@ var _ = Describe("Consolidation", func() {
 				pods = append(pods, pod)
 			}
 			ExpectApplied(ctx, env.Client, rs, nodePool)
-			ExpectProvisionedNoBinding(ctx, env.Client, cluster, cloudProvider, prov, lo.Map(pods, func(p *corev1.Pod, _ int) *corev1.Pod { return p.DeepCopy() })...)
+			ExpectProvisionedNoBinding(ctx, env.Client, cluster, cloudProvider, prov, ncProv, lo.Map(pods, func(p *corev1.Pod, _ int) *corev1.Pod { return p.DeepCopy() })...)
 
 			nodeClaims := ExpectNodeClaims(ctx, env.Client)
 			Expect(nodeClaims).To(HaveLen(1))
@@ -4570,7 +4570,7 @@ var _ = Describe("Consolidation", func() {
 			// Mark the node for deletion and re-trigger reconciliation
 			oldNodeName := nodes[0].Name
 			cluster.MarkForDeletion(nodes[0].Spec.ProviderID)
-			ExpectProvisionedNoBinding(ctx, env.Client, cluster, cloudProvider, prov, lo.Map(pods, func(p *corev1.Pod, _ int) *corev1.Pod { return p.DeepCopy() })...)
+			ExpectProvisionedNoBinding(ctx, env.Client, cluster, cloudProvider, prov, ncProv, lo.Map(pods, func(p *corev1.Pod, _ int) *corev1.Pod { return p.DeepCopy() })...)
 
 			// Make sure that the cluster state is aware of the current node state
 			nodes = ExpectNodes(ctx, env.Client)

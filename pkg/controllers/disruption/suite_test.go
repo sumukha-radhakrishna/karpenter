@@ -47,7 +47,8 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/fake"
 	"sigs.k8s.io/karpenter/pkg/controllers/disruption"
-	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	provisioning "sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	dynamicprovisioning "sigs.k8s.io/karpenter/pkg/controllers/provisioning/dynamic"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/controllers/state/informer"
 	"sigs.k8s.io/karpenter/pkg/operator/options"
@@ -63,7 +64,8 @@ var ctx context.Context
 var env *test.Environment
 var cluster *state.Cluster
 var disruptionController *disruption.Controller
-var prov *provisioning.Provisioner
+var prov *dynamicprovisioning.Provisioner
+var ncProv *provisioning.NCProvisioner
 var cloudProvider *fake.CloudProvider
 var nodeStateController *informer.NodeController
 var nodeClaimStateController *informer.NodeClaimController
@@ -94,8 +96,9 @@ var _ = BeforeSuite(func() {
 	nodeStateController = informer.NewNodeController(env.Client, cluster)
 	nodeClaimStateController = informer.NewNodeClaimController(env.Client, cloudProvider, cluster)
 	recorder = test.NewEventRecorder()
-	prov = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
-	queue = disruption.NewQueue(env.Client, recorder, cluster, fakeClock, prov)
+	prov = dynamicprovisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+	ncProv = provisioning.NewNCProvisioner(env.Client, recorder, cluster)
+	queue = disruption.NewQueue(env.Client, recorder, cluster, fakeClock, ncProv)
 	disruptionController = disruption.NewController(fakeClock, env.Client, prov, cloudProvider, recorder, cluster, queue)
 })
 
@@ -115,7 +118,7 @@ var _ = BeforeEach(func() {
 	}
 	fakeClock.SetTime(time.Now())
 	cluster.Reset()
-	*queue = lo.FromPtr(disruption.NewQueue(env.Client, recorder, cluster, fakeClock, prov))
+	*queue = lo.FromPtr(disruption.NewQueue(env.Client, recorder, cluster, fakeClock, ncProv))
 	cluster.MarkUnconsolidated()
 
 	// Reset Feature Flags to test defaults
@@ -459,8 +462,9 @@ var _ = Describe("Simulate Scheduling", func() {
 		hangCreateClient := newHangCreateClient(env.Client)
 		defer hangCreateClient.Stop()
 
-		p := provisioning.NewProvisioner(hangCreateClient, recorder, cloudProvider, cluster, fakeClock)
-		q := disruption.NewQueue(hangCreateClient, recorder, cluster, fakeClock, p)
+		p := dynamicprovisioning.NewProvisioner(hangCreateClient, recorder, cloudProvider, cluster, fakeClock)
+		ncp := provisioning.NewNCProvisioner(hangCreateClient, recorder, cluster)
+		q := disruption.NewQueue(hangCreateClient, recorder, cluster, fakeClock, ncp)
 		dc := disruption.NewController(fakeClock, hangCreateClient, p, cloudProvider, recorder, cluster, q)
 
 		nodeClaim, node := test.NodeClaimAndNode(v1.NodeClaim{
