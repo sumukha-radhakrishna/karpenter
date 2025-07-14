@@ -52,6 +52,8 @@ import (
 	nodepoolregistrationhealth "sigs.k8s.io/karpenter/pkg/controllers/nodepool/registrationhealth"
 	nodepoolvalidation "sigs.k8s.io/karpenter/pkg/controllers/nodepool/validation"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	dynamicprovisioning "sigs.k8s.io/karpenter/pkg/controllers/provisioning/dynamic"
+	staticprovisioning "sigs.k8s.io/karpenter/pkg/controllers/provisioning/static"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/controllers/state/informer"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -67,15 +69,18 @@ func NewControllers(
 	cloudProvider cloudprovider.CloudProvider,
 	cluster *state.Cluster,
 ) []controller.Controller {
-	p := provisioning.NewProvisioner(kubeClient, recorder, cloudProvider, cluster, clock)
+	p := dynamicprovisioning.NewProvisioner(kubeClient, recorder, cloudProvider, cluster, clock)
+	ncp := provisioning.NewNCProvisioner(kubeClient, recorder, cluster)
+
 	evictionQueue := terminator.NewQueue(kubeClient, recorder)
-	disruptionQueue := disruption.NewQueue(kubeClient, recorder, cluster, clock, p)
+	disruptionQueue := disruption.NewQueue(kubeClient, recorder, cluster, clock, ncp)
 
 	controllers := []controller.Controller{
 		p, evictionQueue, disruptionQueue,
 		disruption.NewController(clock, kubeClient, p, cloudProvider, recorder, cluster, disruptionQueue),
-		provisioning.NewPodController(kubeClient, p, cluster),
-		provisioning.NewNodeController(kubeClient, p),
+		dynamicprovisioning.NewPodController(kubeClient, p, cluster),
+		dynamicprovisioning.NewNodeController(kubeClient, p),
+		staticprovisioning.NewController(kubeClient, cluster, recorder, cloudProvider),
 		nodepoolhash.NewController(kubeClient, cloudProvider),
 		expiration.NewController(clock, kubeClient, cloudProvider),
 		informer.NewDaemonSetController(kubeClient, cluster),

@@ -27,7 +27,7 @@ import (
 
 	v1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	disruptionevents "sigs.k8s.io/karpenter/pkg/controllers/disruption/events"
-	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	dynamicprovisioning "sigs.k8s.io/karpenter/pkg/controllers/provisioning/dynamic"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 )
@@ -36,11 +36,11 @@ import (
 type Drift struct {
 	kubeClient  client.Client
 	cluster     *state.Cluster
-	provisioner *provisioning.Provisioner
+	provisioner *dynamicprovisioning.Provisioner
 	recorder    events.Recorder
 }
 
-func NewDrift(kubeClient client.Client, cluster *state.Cluster, provisioner *provisioning.Provisioner, recorder events.Recorder) *Drift {
+func NewDrift(kubeClient client.Client, cluster *state.Cluster, provisioner *dynamicprovisioning.Provisioner, recorder events.Recorder) *Drift {
 	return &Drift{
 		kubeClient:  kubeClient,
 		cluster:     cluster,

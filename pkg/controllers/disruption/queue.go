@@ -88,12 +88,12 @@ type Queue struct {
 	recorder            events.Recorder
 	cluster             *state.Cluster
 	clock               clock.Clock
-	provisioner         *provisioning.Provisioner
+	ncProvisioner       *provisioning.NCProvisioner
 }
 
 // NewQueue creates a queue that will asynchronously orchestrate disruption commands
 func NewQueue(kubeClient client.Client, recorder events.Recorder, cluster *state.Cluster, clock clock.Clock,
-	provisioner *provisioning.Provisioner,
+	ncProvisioner *provisioning.NCProvisioner,
 ) *Queue {
 	queue := &Queue{
 		// nolint:staticcheck
@@ -104,7 +104,7 @@ func NewQueue(kubeClient client.Client, recorder events.Recorder, cluster *state
 		recorder:            recorder,
 		cluster:             cluster,
 		clock:               clock,
-		provisioner:         provisioner,
+		ncProvisioner:       ncProvisioner,
 	}
 	return queue
 }
@@ -264,7 +264,7 @@ func (q *Queue) markDisrupted(ctx context.Context, cmd *Command) ([]*Candidate, 
 
 // createReplacementNodeClaims creates replacement NodeClaims
 func (q *Queue) createReplacementNodeClaims(ctx context.Context, cmd *Command) error {
-	nodeClaimNames, err := q.provisioner.CreateNodeClaims(ctx, lo.Map(cmd.Replacements, func(r *Replacement, _ int) *pscheduling.NodeClaim { return r.NodeClaim }), provisioning.WithReason(strings.ToLower(string(cmd.Reason()))))
+	nodeClaimNames, err := q.ncProvisioner.CreateNodeClaims(ctx, lo.Map(cmd.Replacements, func(r *Replacement, _ int) *pscheduling.NodeClaim { return r.NodeClaim }), provisioning.WithReason(strings.ToLower(string(cmd.Reason()))))
 	if err != nil {
 		return err
 	}

@@ -33,7 +33,7 @@ import (
 	v1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	disruptionevents "sigs.k8s.io/karpenter/pkg/controllers/disruption/events"
-	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	dynamicprovisioning "sigs.k8s.io/karpenter/pkg/controllers/provisioning/dynamic"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning/scheduling"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -47,7 +47,7 @@ import (
 var errCandidateDeleting = fmt.Errorf("candidate is deleting")
 
 //nolint:gocyclo
-func SimulateScheduling(ctx context.Context, kubeClient client.Client, cluster *state.Cluster, provisioner *provisioning.Provisioner,
+func SimulateScheduling(ctx context.Context, kubeClient client.Client, cluster *state.Cluster, provisioner *dynamicprovisioning.Provisioner,
 	candidates ...*Candidate,
 ) (scheduling.Results, error) {
 	candidateNames := sets.NewString(lo.Map(candidates, func(t *Candidate, i int) string { return t.Name() })...)

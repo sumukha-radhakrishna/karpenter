@@ -39,7 +39,7 @@ import (
 
 	v1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	dynamicprovisioning "sigs.k8s.io/karpenter/pkg/controllers/provisioning/dynamic"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	"sigs.k8s.io/karpenter/pkg/metrics"
@@ -52,7 +52,7 @@ type Controller struct {
 	queue         *Queue
 	kubeClient    client.Client
 	cluster       *state.Cluster
-	provisioner   *provisioning.Provisioner
+	provisioner   *dynamicprovisioning.Provisioner
 	recorder      events.Recorder
 	clock         clock.Clock
 	cloudProvider cloudprovider.CloudProvider
@@ -64,7 +64,7 @@ type Controller struct {
 // pollingPeriod that we inspect cluster to look for opportunities to disrupt
 const pollingPeriod = 10 * time.Second
 
-func NewController(clk clock.Clock, kubeClient client.Client, provisioner *provisioning.Provisioner,
+func NewController(clk clock.Clock, kubeClient client.Client, provisioner *dynamicprovisioning.Provisioner,
 	cp cloudprovider.CloudProvider, recorder events.Recorder, cluster *state.Cluster, queue *Queue,
 ) *Controller {
 	c := MakeConsolidation(clk, cluster, kubeClient, provisioner, cp, recorder, queue)

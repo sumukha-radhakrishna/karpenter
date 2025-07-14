@@ -21,10 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
-	"github.com/awslabs/operatorpkg/option"
 	"github.com/awslabs/operatorpkg/serrors"
 	"github.com/awslabs/operatorpkg/singleton"
 	"github.com/awslabs/operatorpkg/status"
@@ -33,7 +31,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -46,6 +43,7 @@ import (
 
 	v1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	scheduler "sigs.k8s.io/karpenter/pkg/controllers/provisioning/scheduling"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -57,25 +55,10 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
-// LaunchOptions are the set of options that can be used to trigger certain
-// actions and configuration during scheduling
-type LaunchOptions struct {
-	RecordPodNomination bool
-	Reason              string
-}
-
-// RecordPodNomination causes nominate pod events to be recorded against the node.
-func RecordPodNomination(o *LaunchOptions) {
-	o.RecordPodNomination = true
-}
-
-func WithReason(reason string) func(*LaunchOptions) {
-	return func(o *LaunchOptions) { o.Reason = reason }
-}
-
 // Provisioner waits for enqueued pods, batches them, creates capacity and binds the pods to the capacity.
 type Provisioner struct {
 	cloudProvider  cloudprovider.CloudProvider
+	ncProvisioner  provisioning.NCProvisioner
 	kubeClient     client.Client
 	batcher        *Batcher[types.UID]
 	volumeTopology *scheduler.VolumeTopology
@@ -91,6 +74,7 @@ func NewProvisioner(kubeClient client.Client, recorder events.Recorder,
 ) *Provisioner {
 	p := &Provisioner{
 		batcher:        NewBatcher[types.UID](clock),
+		ncProvisioner:  *provisioning.NewNCProvisioner(kubeClient, recorder, cluster),
 		cloudProvider:  cloudProvider,
 		kubeClient:     kubeClient,
 		volumeTopology: scheduler.NewVolumeTopology(kubeClient),
@@ -135,27 +119,10 @@ func (p *Provisioner) Reconcile(ctx context.Context) (result reconcile.Result, e
 	if len(results.NewNodeClaims) == 0 {
 		return reconcile.Result{RequeueAfter: singleton.RequeueImmediately}, nil
 	}
-	if _, err = p.CreateNodeClaims(ctx, results.NewNodeClaims, WithReason(metrics.ProvisionedReason), RecordPodNomination); err != nil {
+	if _, err = p.ncProvisioner.CreateNodeClaims(ctx, results.NewNodeClaims, provisioning.WithReason(metrics.ProvisionedReason), provisioning.RecordPodNomination); err != nil {
 		return reconcile.Result{}, err
 	}
 	return reconcile.Result{RequeueAfter: singleton.RequeueImmediately}, nil
-}
-
-// CreateNodeClaims launches nodes passed into the function in parallel. It returns a slice of the successfully created node
-// names as well as a multierr of any errors that occurred while launching nodes
-func (p *Provisioner) CreateNodeClaims(ctx context.Context, nodeClaims []*scheduler.NodeClaim, opts ...option.Function[LaunchOptions]) ([]string, error) {
-	// Create capacity and bind pods
-	errs := make([]error, len(nodeClaims))
-	nodeClaimNames := make([]string, len(nodeClaims))
-	workqueue.ParallelizeUntil(ctx, len(nodeClaims), len(nodeClaims), func(i int) {
-		// create a new context to avoid a data race on the ctx variable
-		if name, err := p.Create(ctx, nodeClaims[i], opts...); err != nil {
-			errs[i] = fmt.Errorf("creating node claim, %w", err)
-		} else {
-			nodeClaimNames[i] = name
-		}
-	})
-	return nodeClaimNames, multierr.Combine(errs...)
 }
 
 func (p *Provisioner) GetPendingPods(ctx context.Context) ([]*corev1.Pod, error) {
@@ -376,66 +343,6 @@ func (p *Provisioner) Schedule(ctx context.Context) (scheduler.Results, error) {
 		results.ExistingNodeToPodMapping())
 	results.Record(ctx, p.recorder, p.cluster)
 	return results, nil
-}
-
-func (p *Provisioner) Create(ctx context.Context, n *scheduler.NodeClaim, opts ...option.Function[LaunchOptions]) (string, error) {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("NodePool", klog.KRef("", n.NodePoolName)))
-	options := option.Resolve(opts...)
-	latest := &v1.NodePool{}
-	if err := p.kubeClient.Get(ctx, types.NamespacedName{Name: n.NodePoolName}, latest); err != nil {
-		return "", fmt.Errorf("getting current resource usage, %w", err)
-	}
-	if err := latest.Spec.Limits.ExceededBy(p.cluster.NodePoolResourcesFor(n.NodePoolName)); err != nil {
-		return "", err
-	}
-	nodeClaim := n.ToNodeClaim()
-
-	if err := p.kubeClient.Create(ctx, nodeClaim); err != nil {
-		return "", err
-	}
-
-	// Update pod to nodeClaim mapping for newly created nodeClaims. We do
-	// this here because nodeClaim does not have a name until it is created.
-	p.cluster.UpdatePodToNodeClaimMapping(map[string][]*corev1.Pod{nodeClaim.Name: n.Pods})
-
-	instanceTypeRequirement, _ := lo.Find(nodeClaim.Spec.Requirements, func(req v1.NodeSelectorRequirementWithMinValues) bool {
-		return req.Key == corev1.LabelInstanceTypeStable
-	})
-
-	log.FromContext(ctx).WithValues("NodeClaim", klog.KObj(nodeClaim), "requests", nodeClaim.Spec.Resources.Requests, "instance-types", instanceTypeList(instanceTypeRequirement.Values)).
-		Info("created nodeclaim")
-	metrics.NodeClaimsCreatedTotal.Inc(map[string]string{
-		metrics.ReasonLabel:       options.Reason,
-		metrics.NodePoolLabel:     nodeClaim.Labels[v1.NodePoolLabelKey],
-		metrics.CapacityTypeLabel: nodeClaim.Labels[v1.CapacityTypeLabelKey],
-	})
-	// Update the nodeclaim manually in state to avoid eventual consistency delay races with our watcher.
-	// This is essential to avoiding races where disruption can create a replacement node, then immediately
-	// requeue. This can race with controller-runtime's internal cache as it watches events on the cluster
-	// to then trigger cluster state updates. Triggering it manually ensures that Karpenter waits for the
-	// internal cache to sync before moving onto another disruption loop.
-	p.cluster.UpdateNodeClaim(nodeClaim)
-	if option.Resolve(opts...).RecordPodNomination {
-		for _, pod := range n.Pods {
-			p.recorder.Publish(scheduler.NominatePodEvent(pod, nil, nodeClaim))
-		}
-	}
-	return nodeClaim.Name, nil
-}
-
-func instanceTypeList(names []string) string {
-	var itSb strings.Builder
-	for i, name := range names {
-		// print the first 5 instance types only (indices 0-4)
-		if i > 4 {
-			lo.Must(fmt.Fprintf(&itSb, " and %d other(s)", len(names)-i))
-			break
-		} else if i > 0 {
-			lo.Must(fmt.Fprint(&itSb, ", "))
-		}
-		lo.Must(fmt.Fprint(&itSb, name))
-	}
-	return itSb.String()
 }
 
 func (p *Provisioner) getDaemonSetPods(ctx context.Context) ([]*corev1.Pod, error) {
