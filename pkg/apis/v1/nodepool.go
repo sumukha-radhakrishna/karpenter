@@ -38,7 +38,7 @@ import (
 // from a combination of nodepool and pod scheduling constraints.
 // +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || self.disruption.consolidationPolicy == \"WhenEmptyOrUnderutilized\"",message="When replicas is set, consolidationPolicy must not be explicitly set"
 // +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || self.disruption.consolidateAfter == \"Never\"",message="When replicas is set, consolidateAfter must not be explicitly set"
-// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || (!has(self.limits) || (!has(self.limits.cpu) && !has(self.limits.memory)))",message="When replicas is set, limits (limits.cpu and limits.memory) must not be set"
+// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || (!has(self.limits)))",message="When replicas is set, limits (limits.cpu and limits.memory) must not be set"
 // +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || (!has(self.weight))",message="When replicas is set, weight must not be set"
 type NodePoolSpec struct {
 	// Template contains the template of possibilities for the provisioning logic to launch a NodeClaim with.
@@ -148,9 +148,10 @@ const (
 type DisruptionReason string
 
 const (
-	DisruptionReasonUnderutilized DisruptionReason = "Underutilized"
-	DisruptionReasonEmpty         DisruptionReason = "Empty"
-	DisruptionReasonDrifted       DisruptionReason = "Drifted"
+	DisruptionReasonUnderutilized   DisruptionReason = "Underutilized"
+	DisruptionReasonEmpty           DisruptionReason = "Empty"
+	DisruptionReasonDrifted         DisruptionReason = "Drifted"
+	DisruptionReasonOverprovisioned DisruptionReason = "Overprovisioned"
 )
 
 type Limits v1.ResourceList
@@ -267,16 +268,15 @@ type ObjectMeta struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:storageversion
 // +kubebuilder:resource:path=nodepools,scope=Cluster,categories=karpenter
-// +kubebuilder:printcolumn:name="Replicas",type="string",JSONPath=".status.replicas",description=""
 // +kubebuilder:printcolumn:name="NodeClass",type="string",JSONPath=".spec.template.spec.nodeClassRef.name",description=""
-// +kubebuilder:printcolumn:name="Nodes",type="string",JSONPath=".status.resources.nodes",description=""
+// +kubebuilder:printcolumn:name="Nodes",type="string",JSONPath=".status.nodes",description=""
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status",description=""
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description=""
 // +kubebuilder:printcolumn:name="Weight",type="integer",JSONPath=".spec.weight",priority=1,description=""
 // +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".status.resources.cpu",priority=1,description=""
 // +kubebuilder:printcolumn:name="Memory",type="string",JSONPath=".status.resources.memory",priority=1,description=""
 // +kubebuilder:subresource:status
-// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas
+// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.nodes
 type NodePool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

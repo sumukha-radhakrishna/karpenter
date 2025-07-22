@@ -17,13 +17,10 @@ spec:
   scope: Cluster
   versions:
     - additionalPrinterColumns:
-        - jsonPath: .status.replicas
-          name: Replicas
-          type: string
         - jsonPath: .spec.template.spec.nodeClassRef.name
           name: NodeClass
           type: string
-        - jsonPath: .status.resources.nodes
+        - jsonPath: .status.nodes
           name: Nodes
           type: string
         - jsonPath: .status.conditions[?(@.type=="Ready")].status
@@ -459,7 +456,7 @@ spec:
                 - message: When replicas is set, consolidateAfter must not be explicitly set
                   rule: '!(has(self.replicas)) || self.disruption.consolidateAfter == "Never"'
                 - message: When replicas is set, limits (limits.cpu and limits.memory) must not be set
-                  rule: '!(has(self.replicas)) || (!has(self.limits) || (!has(self.limits.cpu) && !has(self.limits.memory)))'
+                  rule: '!(has(self.replicas)) || (!has(self.limits)))'
                 - message: When replicas is set, weight must not be set
                   rule: '!(has(self.replicas)) || (!has(self.weight))'
             status:
@@ -527,10 +524,10 @@ spec:
                     the actual NodeClass Generation, NodeRegistrationHealthy status condition on the NodePool will be reset
                   format: int64
                   type: integer
-                replicas:
+                nodes:
                   default: 0
-                  description: Replicas is the count of desired static nodes associated with this NodePool
-                  format: int32
+                  description: Nodes is the count of nodes associated with this NodePool
+                  format: int64
                   type: integer
                 resources:
                   additionalProperties:
@@ -550,5 +547,5 @@ spec:
       subresources:
         scale:
           specReplicasPath: .spec.replicas
-          statusReplicasPath: .status.replicas
+          statusReplicasPath: .status.nodes
         status: {}
