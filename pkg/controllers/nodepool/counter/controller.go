@@ -81,6 +81,11 @@ func (c *Controller) Reconcile(ctx context.Context, nodePool *v1.NodePool) (reco
 	stored := nodePool.DeepCopy()
 	// Determine resource usage and update nodepool.status.resources
 	nodePool.Status.Resources = lo.Assign(BaseResources, c.cluster.NodePoolResourcesFor(nodePool.Name))
+
+	nodeQuantity := nodePool.Status.Resources[resources.Node]
+	nodePool.Status.Nodes = lo.ToPtr(nodeQuantity.Value())
+	delete(nodePool.Status.Resources, resources.Node)
+
 	if !equality.Semantic.DeepEqual(stored, nodePool) {
 		if err := c.kubeClient.Status().Patch(ctx, nodePool, client.MergeFrom(stored)); err != nil {
 			return reconcile.Result{}, client.IgnoreNotFound(err)
@@ -93,9 +98,10 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named("nodepool.counter").
 		For(&v1.NodePool{}, builder.WithPredicates(nodepoolutils.IsManagedPredicateFuncs(c.cloudProvider), predicate.Funcs{
-			CreateFunc: func(e event.CreateEvent) bool { return true },
-			UpdateFunc: func(e event.UpdateEvent) bool { return false },
-			DeleteFunc: func(e event.DeleteEvent) bool { return false },
+			CreateFunc:  func(e event.CreateEvent) bool { return true },
+			UpdateFunc:  func(e event.UpdateEvent) bool { return false },
+			DeleteFunc:  func(e event.DeleteEvent) bool { return false },
+			GenericFunc: func(e event.GenericEvent) bool { return false },
 		})).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 10}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))

@@ -19,6 +19,7 @@ package disruption_test
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -836,5 +837,351 @@ var _ = Describe("Emptiness", func() {
 		Expect(ExpectNodeClaims(ctx, env.Client)).To(HaveLen(0))
 		Expect(ExpectNodes(ctx, env.Client)).To(HaveLen(0))
 		ExpectNotFound(ctx, env.Client, nodeClaims[0], nodes[0])
+	})
+
+	Context("Static NodePool Emptiness", func() {
+		It("should delete empty nodes from static nodepool when exceeding desired replicas", func() {
+			// Create a static nodepool with 2 desired replicas
+			staticNodePool := test.StaticNodePool(v1.NodePool{
+				Spec: v1.NodePoolSpec{
+					Replicas: lo.ToPtr(int64(2)), // Static nodepool with 2 desired replicas
+					Disruption: v1.Disruption{
+						ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
+						Budgets: []v1.Budget{{
+							Nodes: "100%",
+						}},
+					},
+				},
+			})
+
+			// Create 3 empty nodeclaims (exceeds desired replicas by 1)
+			staticNodeClaims, staticNodes := test.NodeClaimsAndNodes(3, v1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						v1.NodePoolLabelKey:            staticNodePool.Name,
+						v1.NodeInitializedLabelKey:     "true",
+						corev1.LabelInstanceTypeStable: leastExpensiveInstance.Name,
+						v1.CapacityTypeLabelKey:        leastExpensiveOffering.Requirements.Get(v1.CapacityTypeLabelKey).Any(),
+						corev1.LabelTopologyZone:       leastExpensiveOffering.Requirements.Get(corev1.LabelTopologyZone).Any(),
+					},
+				},
+				Status: v1.NodeClaimStatus{
+					Allocatable: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:  resource.MustParse("32"),
+						corev1.ResourcePods: resource.MustParse("100"),
+					},
+				},
+			})
+
+			ExpectApplied(ctx, env.Client, staticNodePool)
+			for i := 0; i < len(staticNodeClaims); i++ {
+				ExpectApplied(ctx, env.Client, staticNodeClaims[i], staticNodes[i])
+			}
+
+			// inform cluster state about nodes and nodeclaims
+			ExpectMakeNodesAndNodeClaimsInitializedAndStateUpdated(ctx, env.Client, nodeStateController, nodeClaimStateController, staticNodes, staticNodeClaims)
+
+			fakeClock.Step(10 * time.Minute)
+			wg := sync.WaitGroup{}
+			ExpectToWait(fakeClock, &wg)
+			ExpectSingletonReconciled(ctx, disruptionController)
+			wg.Wait()
+
+			// Should delete 1 node (3 current - 2 desired = 1 excess)
+			cmds := queue.GetCommands()
+			Expect(cmds).To(HaveLen(1))
+			ExpectObjectReconciled(ctx, env.Client, queue, cmds[0].Candidates[0].NodeClaim)
+
+			// Cascade any deletion of the nodeclaim to the node
+			ExpectNodeClaimsCascadeDeletion(ctx, env.Client, staticNodeClaims...)
+
+			// Should have exactly 2 nodeclaims remaining (matching desired replicas)
+			Expect(len(ExpectNodeClaims(ctx, env.Client))).To(Equal(2))
+			Expect(len(ExpectNodes(ctx, env.Client))).To(Equal(2))
+		})
+
+		It("should not delete empty nodes from static nodepool when at desired replicas", func() {
+			// Create a static nodepool with 2 desired replicas
+			staticNodePool := test.StaticNodePool(v1.NodePool{
+				Spec: v1.NodePoolSpec{
+					Replicas: lo.ToPtr(int64(2)), // Static nodepool with 2 desired replicas
+					Disruption: v1.Disruption{
+						ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
+						Budgets: []v1.Budget{{
+							Nodes: "100%",
+						}},
+					},
+				},
+			})
+
+			// Create exactly 2 empty nodeclaims (matches desired replicas)
+			staticNodeClaims, staticNodes := test.NodeClaimsAndNodes(2, v1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						v1.NodePoolLabelKey:            staticNodePool.Name,
+						v1.NodeInitializedLabelKey:     "true",
+						corev1.LabelInstanceTypeStable: leastExpensiveInstance.Name,
+						v1.CapacityTypeLabelKey:        leastExpensiveOffering.Requirements.Get(v1.CapacityTypeLabelKey).Any(),
+						corev1.LabelTopologyZone:       leastExpensiveOffering.Requirements.Get(corev1.LabelTopologyZone).Any(),
+					},
+				},
+				Status: v1.NodeClaimStatus{
+					Allocatable: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:  resource.MustParse("32"),
+						corev1.ResourcePods: resource.MustParse("100"),
+					},
+				},
+			})
+
+			ExpectApplied(ctx, env.Client, staticNodePool)
+			for i := 0; i < len(staticNodeClaims); i++ {
+				ExpectApplied(ctx, env.Client, staticNodeClaims[i], staticNodes[i])
+			}
+
+			// inform cluster state about nodes and nodeclaims
+			ExpectMakeNodesAndNodeClaimsInitializedAndStateUpdated(ctx, env.Client, nodeStateController, nodeClaimStateController, staticNodes, staticNodeClaims)
+
+			fakeClock.Step(10 * time.Minute)
+			ExpectSingletonReconciled(ctx, disruptionController)
+
+			// Should not delete any nodes since we're at desired replicas
+			cmds := queue.GetCommands()
+			Expect(cmds).To(HaveLen(0))
+
+			// Should still have exactly 2 nodeclaims (matching desired replicas)
+			Expect(len(ExpectNodeClaims(ctx, env.Client))).To(Equal(2))
+			Expect(len(ExpectNodes(ctx, env.Client))).To(Equal(2))
+		})
+
+		It("should delete multiple empty nodes from static nodepool when significantly exceeding desired replicas", func() {
+			// Create a static nodepool with 1 desired replica
+			staticNodePool := test.StaticNodePool(v1.NodePool{
+				Spec: v1.NodePoolSpec{
+					Replicas: lo.ToPtr(int64(1)), // Static nodepool with 1 desired replica
+					Disruption: v1.Disruption{
+						ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
+						Budgets: []v1.Budget{{
+							Nodes: "100%",
+						}},
+					},
+				},
+			})
+
+			// Create 5 empty nodeclaims (exceeds desired replicas by 4)
+			staticNodeClaims, staticNodes := test.NodeClaimsAndNodes(5, v1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						v1.NodePoolLabelKey:            staticNodePool.Name,
+						v1.NodeInitializedLabelKey:     "true",
+						corev1.LabelInstanceTypeStable: leastExpensiveInstance.Name,
+						v1.CapacityTypeLabelKey:        leastExpensiveOffering.Requirements.Get(v1.CapacityTypeLabelKey).Any(),
+						corev1.LabelTopologyZone:       leastExpensiveOffering.Requirements.Get(corev1.LabelTopologyZone).Any(),
+					},
+				},
+				Status: v1.NodeClaimStatus{
+					Allocatable: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:  resource.MustParse("32"),
+						corev1.ResourcePods: resource.MustParse("100"),
+					},
+				},
+			})
+
+			ExpectApplied(ctx, env.Client, staticNodePool)
+			for i := 0; i < len(staticNodeClaims); i++ {
+				ExpectApplied(ctx, env.Client, staticNodeClaims[i], staticNodes[i])
+			}
+
+			// inform cluster state about nodes and nodeclaims
+			ExpectMakeNodesAndNodeClaimsInitializedAndStateUpdated(ctx, env.Client, nodeStateController, nodeClaimStateController, staticNodes, staticNodeClaims)
+
+			fakeClock.Step(10 * time.Minute)
+			wg := sync.WaitGroup{}
+			ExpectToWait(fakeClock, &wg)
+			ExpectSingletonReconciled(ctx, disruptionController)
+			wg.Wait()
+
+			// Should delete 4 nodes (5 current - 1 desired = 4 excess)
+			cmds := queue.GetCommands()
+			Expect(cmds).To(HaveLen(1))
+			ExpectObjectReconciled(ctx, env.Client, queue, cmds[0].Candidates[0].NodeClaim)
+
+			// Cascade any deletion of the nodeclaim to the node
+			ExpectNodeClaimsCascadeDeletion(ctx, env.Client, staticNodeClaims...)
+
+			// Should have exactly 1 nodeclaim remaining (matching desired replicas)
+			Expect(len(ExpectNodeClaims(ctx, env.Client))).To(Equal(1))
+			Expect(len(ExpectNodes(ctx, env.Client))).To(Equal(1))
+		})
+
+		It("should handle multiple static nodepools with different replica counts", func() {
+			// Create first static nodepool with 2 desired replicas
+			staticNodePool1 := test.StaticNodePool(v1.NodePool{
+				Spec: v1.NodePoolSpec{
+					Replicas: lo.ToPtr(int64(2)), // Static nodepool with 2 desired replicas
+					Disruption: v1.Disruption{
+						ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
+						Budgets: []v1.Budget{{
+							Nodes: "100%",
+						}},
+					},
+				},
+			})
+
+			// Create second static nodepool with 1 desired replica
+			staticNodePool2 := test.StaticNodePool(v1.NodePool{
+				Spec: v1.NodePoolSpec{
+					Replicas: lo.ToPtr(int64(1)), // Static nodepool with 1 desired replica
+					Disruption: v1.Disruption{
+						ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
+						Budgets: []v1.Budget{{
+							Nodes: "100%",
+						}},
+					},
+				},
+			})
+
+			// Create 4 empty nodeclaims for first nodepool (exceeds desired by 2)
+			staticNodeClaims1, staticNodes1 := test.NodeClaimsAndNodes(4, v1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						v1.NodePoolLabelKey:            staticNodePool1.Name,
+						v1.NodeInitializedLabelKey:     "true",
+						corev1.LabelInstanceTypeStable: leastExpensiveInstance.Name,
+						v1.CapacityTypeLabelKey:        leastExpensiveOffering.Requirements.Get(v1.CapacityTypeLabelKey).Any(),
+						corev1.LabelTopologyZone:       leastExpensiveOffering.Requirements.Get(corev1.LabelTopologyZone).Any(),
+					},
+				},
+				Status: v1.NodeClaimStatus{
+					Allocatable: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:  resource.MustParse("32"),
+						corev1.ResourcePods: resource.MustParse("100"),
+					},
+				},
+			})
+
+			// Create 3 empty nodeclaims for second nodepool (exceeds desired by 2)
+			staticNodeClaims2, staticNodes2 := test.NodeClaimsAndNodes(3, v1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						v1.NodePoolLabelKey:            staticNodePool2.Name,
+						v1.NodeInitializedLabelKey:     "true",
+						corev1.LabelInstanceTypeStable: leastExpensiveInstance.Name,
+						v1.CapacityTypeLabelKey:        leastExpensiveOffering.Requirements.Get(v1.CapacityTypeLabelKey).Any(),
+						corev1.LabelTopologyZone:       leastExpensiveOffering.Requirements.Get(corev1.LabelTopologyZone).Any(),
+					},
+				},
+				Status: v1.NodeClaimStatus{
+					Allocatable: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:  resource.MustParse("32"),
+						corev1.ResourcePods: resource.MustParse("100"),
+					},
+				},
+			})
+
+			// Set consolidatable condition for all nodeclaims
+			allNodeClaims := append(staticNodeClaims1, staticNodeClaims2...)
+			allNodes := append(staticNodes1, staticNodes2...)
+
+			ExpectApplied(ctx, env.Client, staticNodePool1, staticNodePool2)
+			for i := 0; i < len(allNodeClaims); i++ {
+				ExpectApplied(ctx, env.Client, allNodeClaims[i], allNodes[i])
+			}
+
+			// inform cluster state about nodes and nodeclaims
+			ExpectMakeNodesAndNodeClaimsInitializedAndStateUpdated(ctx, env.Client, nodeStateController, nodeClaimStateController, allNodes, allNodeClaims)
+
+			fakeClock.Step(10 * time.Minute)
+			wg := sync.WaitGroup{}
+			ExpectToWait(fakeClock, &wg)
+			ExpectSingletonReconciled(ctx, disruptionController)
+			wg.Wait()
+
+			// Should delete 4 nodes total (2 from first pool + 2 from second pool)
+			cmds := queue.GetCommands()
+			Expect(cmds).To(HaveLen(1))
+			ExpectObjectReconciled(ctx, env.Client, queue, cmds[0].Candidates[0].NodeClaim)
+
+			// Cascade any deletion of the nodeclaim to the node
+			ExpectNodeClaimsCascadeDeletion(ctx, env.Client, allNodeClaims...)
+
+			// Should have exactly 3 nodeclaims remaining (2 from first pool + 1 from second pool)
+			finalNodeClaims := ExpectNodeClaims(ctx, env.Client)
+			Expect(len(finalNodeClaims)).To(Equal(3))
+			Expect(len(ExpectNodes(ctx, env.Client))).To(Equal(3))
+
+			// Verify the correct number of nodeclaims per nodepool
+			nodePool1FinalClaims := lo.Filter(finalNodeClaims, func(nc *v1.NodeClaim, _ int) bool {
+				return nc.Labels[v1.NodePoolLabelKey] == staticNodePool1.Name
+			})
+			nodePool2FinalClaims := lo.Filter(finalNodeClaims, func(nc *v1.NodeClaim, _ int) bool {
+				return nc.Labels[v1.NodePoolLabelKey] == staticNodePool2.Name
+			})
+
+			Expect(len(nodePool1FinalClaims)).To(Equal(2)) // Should have 2 (desired replicas)
+			Expect(len(nodePool2FinalClaims)).To(Equal(1)) // Should have 1 (desired replicas)
+		})
+
+		It("should let overprovision handler take care of deleting nodes with pods", func() {
+			// Create a static nodepool with 1 desired replica
+			staticNodePool := test.StaticNodePool(v1.NodePool{
+				Spec: v1.NodePoolSpec{
+					Replicas: lo.ToPtr(int64(1)), // Static nodepool with 1 desired replica
+					Disruption: v1.Disruption{
+						ConsolidationPolicy: v1.ConsolidationPolicyWhenEmptyOrUnderutilized,
+						Budgets: []v1.Budget{{
+							Nodes: "100%",
+						}},
+					},
+				},
+			})
+
+			// Create 3 nodeclaims (exceeds desired replicas by 2)
+			staticNodeClaims, staticNodes := test.NodeClaimsAndNodes(3, v1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						v1.NodePoolLabelKey:            staticNodePool.Name,
+						v1.NodeInitializedLabelKey:     "true",
+						corev1.LabelInstanceTypeStable: leastExpensiveInstance.Name,
+						v1.CapacityTypeLabelKey:        leastExpensiveOffering.Requirements.Get(v1.CapacityTypeLabelKey).Any(),
+						corev1.LabelTopologyZone:       leastExpensiveOffering.Requirements.Get(corev1.LabelTopologyZone).Any(),
+					},
+				},
+				Status: v1.NodeClaimStatus{
+					Allocatable: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:  resource.MustParse("32"),
+						corev1.ResourcePods: resource.MustParse("100"),
+					},
+				},
+			})
+
+			// Create pods and bind them to nodes (making nodes non-empty)
+			pods := test.Pods(3, test.PodOptions{})
+
+			ExpectApplied(ctx, env.Client, staticNodePool)
+			for i := 0; i < len(staticNodeClaims); i++ {
+				ExpectApplied(ctx, env.Client, staticNodeClaims[i], staticNodes[i], pods[i])
+				ExpectManualBinding(ctx, env.Client, pods[i], staticNodes[i])
+			}
+
+			// inform cluster state about nodes and nodeclaims
+			ExpectMakeNodesAndNodeClaimsInitializedAndStateUpdated(ctx, env.Client, nodeStateController, nodeClaimStateController, staticNodes, staticNodeClaims)
+
+			for i := 0; i < 2; i++ {
+				ExpectSingletonReconciled(ctx, disruptionController)
+
+				ExpectMetricCounterValue(disruption.DecisionsPerformedTotal, float64(i+1), map[string]string{
+					"decision":          "delete",
+					metrics.ReasonLabel: strings.ToLower(string(v1.DisruptionReasonOverprovisioned)),
+				})
+
+				cmds := queue.GetCommands()
+				Expect(cmds).To(HaveLen(1))
+				ExpectObjectReconciled(ctx, env.Client, queue, cmds[0].Candidates[0].NodeClaim)
+				ExpectReconcileSucceeded(ctx, nodeStateController, client.ObjectKeyFromObject(cmds[0].Candidates[0].Node))
+			}
+
+			// After deprovisioning, we should have exactly 1 nodeclaims (matching desired replicas)
+			Expect(len(ExpectNodeClaims(ctx, env.Client))).To(Equal(1))
+		})
 	})
 })

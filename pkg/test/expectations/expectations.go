@@ -58,6 +58,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/lifecycle"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	dynamicprovisioning "sigs.k8s.io/karpenter/pkg/controllers/provisioning/dynamic"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning/scheduling"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/controllers/state/informer"
@@ -299,9 +300,9 @@ func ExpectFinalizersRemoved(ctx context.Context, c client.Client, objs ...clien
 	}
 }
 
-func ExpectProvisioned(ctx context.Context, c client.Client, cluster *state.Cluster, cloudProvider cloudprovider.CloudProvider, provisioner *provisioning.Provisioner, pods ...*corev1.Pod) Bindings {
+func ExpectProvisioned(ctx context.Context, c client.Client, cluster *state.Cluster, cloudProvider cloudprovider.CloudProvider, provisioner *dynamicprovisioning.Provisioner, ncProvisioner *provisioning.NCProvisioner, pods ...*corev1.Pod) Bindings {
 	GinkgoHelper()
-	bindings := ExpectProvisionedNoBinding(ctx, c, cluster, cloudProvider, provisioner, pods...)
+	bindings := ExpectProvisionedNoBinding(ctx, c, cluster, cloudProvider, provisioner, ncProvisioner, pods...)
 	podKeys := sets.NewString(lo.Map(pods, func(p *corev1.Pod, _ int) string { return client.ObjectKeyFromObject(p).String() })...)
 	for pod, binding := range bindings {
 		// Only bind the pods that are passed through
@@ -314,7 +315,7 @@ func ExpectProvisioned(ctx context.Context, c client.Client, cluster *state.Clus
 }
 
 //nolint:gocyclo
-func ExpectProvisionedNoBinding(ctx context.Context, c client.Client, cluster *state.Cluster, cloudProvider cloudprovider.CloudProvider, provisioner *provisioning.Provisioner, pods ...*corev1.Pod) Bindings {
+func ExpectProvisionedNoBinding(ctx context.Context, c client.Client, cluster *state.Cluster, cloudProvider cloudprovider.CloudProvider, provisioner *dynamicprovisioning.Provisioner, ncProvisioner *provisioning.NCProvisioner, pods ...*corev1.Pod) Bindings {
 	GinkgoHelper()
 	// Persist objects
 	for _, pod := range pods {
@@ -329,7 +330,7 @@ func ExpectProvisionedNoBinding(ctx context.Context, c client.Client, cluster *s
 	}
 	for _, m := range results.NewNodeClaims {
 		// TODO: Check the error on the provisioner launch
-		nodeClaimName, err := provisioner.Create(ctx, m, provisioning.WithReason(metrics.ProvisionedReason))
+		nodeClaimName, err := ncProvisioner.Create(ctx, m, provisioning.WithReason(metrics.ProvisionedReason))
 		if err != nil {
 			return bindings
 		}
