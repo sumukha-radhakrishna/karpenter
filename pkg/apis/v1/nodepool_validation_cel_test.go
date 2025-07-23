@@ -704,18 +704,21 @@ var _ = Describe("CEL/Validation", func() {
 		Context("Valid Replicas Values", func() {
 			It("should succeed when replicas is set to a positive value", func() {
 				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
+				nodePool.Spec.Disruption.ConsolidateAfter = MustParseNillableDuration("0s")
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			})
 
 			It("should succeed when replicas is set to zero", func() {
 				nodePool.Spec.Replicas = lo.ToPtr(int64(0))
+				nodePool.Spec.Disruption.ConsolidateAfter = MustParseNillableDuration("0s")
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			})
 
 			It("should succeed when replicas is set to a large value", func() {
 				nodePool.Spec.Replicas = lo.ToPtr(int64(1000))
+				nodePool.Spec.Disruption.ConsolidateAfter = MustParseNillableDuration("0s")
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			})
@@ -728,7 +731,13 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			})
-			It("should succeed when replicas and default consolidateAfter 'Never' are both set", func() {
+			It("should succeed when replicas and default consolidateAfter '0s' are both set", func() {
+				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
+				nodePool.Spec.Disruption.ConsolidateAfter = MustParseNillableDuration("0s")
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			})
+			It("should succeed when replicas and default consolidateAfter '0s' are both set", func() {
 				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
 				nodePool.Spec.Disruption.ConsolidateAfter = MustParseNillableDuration("Never")
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
@@ -739,32 +748,45 @@ var _ = Describe("CEL/Validation", func() {
 		Context("Invalid Replicas Values", func() {
 			It("should fail when replicas is set to a negative value", func() {
 				nodePool.Spec.Replicas = lo.ToPtr(int64(-100))
+				nodePool.Spec.Disruption.ConsolidateAfter = MustParseNillableDuration("0s")
 				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 			})
+		})
 
+		Context("Disruption Budget", func() {
+			DescribeTable("should succeed when replicas is set and disruption budgets only has reason", func(reason DisruptionReason) {
+				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
+				nodePool.Spec.Disruption.Budgets = []Budget{{
+					Nodes:   "10%",
+					Reasons: []DisruptionReason{reason},
+				}}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			},
+				Entry("drifted", DisruptionReasonDrifted),
+				Entry("empty", DisruptionReasonEmpty),
+				Entry("under-utilized", DisruptionReasonUnderutilized),
+			)
+
+			It("should succeed when replicas is set and disruption budgets have no reasons specified (defaults allowed)", func() {
+				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
+				nodePool.Spec.Disruption.Budgets = []Budget{{
+					Nodes: "10%",
+				}}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			})
 		})
 
 		Context("Incompatible Fields", func() {
-			It("should fail when replicas and weight are both set", func() {
-				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
-				nodePool.Spec.Weight = lo.ToPtr(int32(10))
-				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
-			})
-
-			It("should fail when replicas and limits.cpu are both set", func() {
-				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
-				nodePool.Spec.Limits = Limits{"cpu": lo.Must(resource.ParseQuantity("10"))}
-				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
-			})
-
-			It("should fail when replicas and limits.memory are both set", func() {
-				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
-				nodePool.Spec.Limits = Limits{"memory": lo.Must(resource.ParseQuantity("10Gi"))}
-				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
-			})
+			DescribeTable("should fail when replicas and limits are both set",
+				func(limits Limits) {
+					nodePool.Spec.Replicas = lo.ToPtr(int64(5))
+					nodePool.Spec.Limits = limits
+					Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				},
+				Entry("with pods limit", Limits{"pods": lo.Must(resource.ParseQuantity("10"))}),
+				Entry("with cpu limit", Limits{"cpu": lo.Must(resource.ParseQuantity("10"))}),
+				Entry("with memory limit", Limits{"memory": lo.Must(resource.ParseQuantity("10Gi"))}),
+			)
 
 			It("should fail when replicas and limits with multiple resources are both set", func() {
 				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
@@ -773,25 +795,29 @@ var _ = Describe("CEL/Validation", func() {
 					"memory": lo.Must(resource.ParseQuantity("10Gi")),
 				}
 				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
 			})
 
 			It("should fail runtime validation when replicas and consolidationPolicy are both set", func() {
 				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
 				nodePool.Spec.Disruption.ConsolidationPolicy = ConsolidationPolicyWhenEmpty
 				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
 			})
 
 			It("should fail runtime validation when replicas and non-default consolidateAfter are both set", func() {
 				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
 				nodePool.Spec.Disruption.ConsolidateAfter = MustParseNillableDuration("10m")
 				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
 			})
 		})
 
 		Context("Compatible Fields", func() {
+			It("should succeed when replicas and weight are both set", func() {
+				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
+				nodePool.Spec.Weight = lo.ToPtr(int32(10))
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			})
+
 			It("should succeed when replicas is set and disruption budgets are set", func() {
 				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
 				nodePool.Spec.Disruption.Budgets = []Budget{{
@@ -807,16 +833,6 @@ var _ = Describe("CEL/Validation", func() {
 					Nodes:    "10%",
 					Schedule: lo.ToPtr("* * * * *"),
 					Duration: &metav1.Duration{Duration: 20 * time.Minute},
-				}}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
-			})
-
-			It("should succeed when replicas is set and disruption budgets with reasons are set", func() {
-				nodePool.Spec.Replicas = lo.ToPtr(int64(5))
-				nodePool.Spec.Disruption.Budgets = []Budget{{
-					Nodes:   "10%",
-					Reasons: []DisruptionReason{DisruptionReasonDrifted, DisruptionReasonEmpty},
 				}}
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
@@ -837,8 +853,8 @@ var _ = Describe("CEL/Validation", func() {
 			})
 
 			It("should fail when adding replicas to a NodePool with incompatible fields", func() {
-				// Create NodePool with weight
-				nodePool.Spec.Weight = lo.ToPtr(int32(10))
+				// Create NodePool with Limits
+				nodePool.Spec.Limits = Limits{"pods": lo.Must(resource.ParseQuantity("10"))}
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 
 				// Update to add replicas

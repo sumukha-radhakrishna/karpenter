@@ -453,9 +453,9 @@ func (in *NodePoolStatus) DeepCopyInto(out *NodePoolStatus) {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
-	if in.Replicas != nil {
-		in, out := &in.Replicas, &out.Replicas
-		*out = new(int32)
+	if in.Nodes != nil {
+		in, out := &in.Nodes, &out.Nodes
+		*out = new(int64)
 		**out = **in
 	}
 	if in.Conditions != nil {
