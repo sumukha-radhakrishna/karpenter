@@ -150,6 +150,7 @@ const (
 	DisruptionReasonUnderutilized DisruptionReason = "Underutilized"
 	DisruptionReasonEmpty         DisruptionReason = "Empty"
 	DisruptionReasonDrifted       DisruptionReason = "Drifted"
+	DisruptionReasonScaleDown     DisruptionReason = "ScaleDown"
 )
 
 type Limits v1.ResourceList
