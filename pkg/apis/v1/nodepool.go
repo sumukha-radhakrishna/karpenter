@@ -37,9 +37,8 @@ import (
 // is capable of managing a diverse set of nodes. Node properties are determined
 // from a combination of nodepool and pod scheduling constraints.
 // +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || self.disruption.consolidationPolicy == \"WhenEmptyOrUnderutilized\"",message="When replicas is set, consolidationPolicy must not be explicitly set"
-// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || self.disruption.consolidateAfter == \"Never\"",message="When replicas is set, consolidateAfter must not be explicitly set"
-// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || (!has(self.limits) || (!has(self.limits.cpu) && !has(self.limits.memory)))",message="When replicas is set, limits (limits.cpu and limits.memory) must not be set"
-// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || (!has(self.weight))",message="When replicas is set, weight must not be set"
+// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || (self.disruption.consolidateAfter == '0s' || self.disruption.consolidateAfter == 'Never')",message="When replicas is set, consolidateAfter must be either default '0s' or 'Never'"
+// +kubebuilder:validation:XValidation:rule="!(has(self.replicas)) || (!has(self.limits))",message="limits is not supported when setting replicas"
 type NodePoolSpec struct {
 	// Template contains the template of possibilities for the provisioning logic to launch a NodeClaim with.
 	// NodeClaims launched from this NodePool will often be further constrained than the template specifies.
@@ -62,11 +61,10 @@ type NodePoolSpec struct {
 	Weight *int32 `json:"weight,omitempty"`
 	// Replicas is the desired number of nodes for the NodePool. When specified, the NodePool will
 	// maintain this fixed number of replicas rather than scaling based on pod demand.
-	// When replicas is set, the following fields cannot be specified:
+	// When replicas is set, the following fields are not supported:
 	// - disruption.consolidationPolicy
 	// - disruption.consolidateAfter
 	// - limits
-	// - weight
 	// Note that the Disruption struct itself is allowed, but the specific fields above are restricted.
 	// +kubebuilder:validation:Minimum:=0
 	// +optional
@@ -105,6 +103,7 @@ type Budget struct {
 	// Reasons is a list of disruption methods that this budget applies to. If Reasons is not set, this budget applies to all methods.
 	// Otherwise, this will apply to each reason defined.
 	// allowed reasons are Underutilized, Empty, and Drifted.
+	// +kubebuilder:validation:MaxItems=50
 	// +optional
 	Reasons []DisruptionReason `json:"reasons,omitempty"`
 	// Nodes dictates the maximum number of NodeClaims owned by this NodePool
@@ -267,16 +266,15 @@ type ObjectMeta struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:storageversion
 // +kubebuilder:resource:path=nodepools,scope=Cluster,categories=karpenter
-// +kubebuilder:printcolumn:name="Replicas",type="string",JSONPath=".status.replicas",description=""
 // +kubebuilder:printcolumn:name="NodeClass",type="string",JSONPath=".spec.template.spec.nodeClassRef.name",description=""
-// +kubebuilder:printcolumn:name="Nodes",type="string",JSONPath=".status.resources.nodes",description=""
+// +kubebuilder:printcolumn:name="Nodes",type="string",JSONPath=".status.nodes",description=""
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status",description=""
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description=""
 // +kubebuilder:printcolumn:name="Weight",type="integer",JSONPath=".spec.weight",priority=1,description=""
 // +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".status.resources.cpu",priority=1,description=""
 // +kubebuilder:printcolumn:name="Memory",type="string",JSONPath=".status.resources.memory",priority=1,description=""
 // +kubebuilder:subresource:status
-// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas
+// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.nodes
 type NodePool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
