@@ -20,7 +20,9 @@ import (
 	"context"
 	"time"
 
+	"github.com/awslabs/operatorpkg/serrors"
 	"github.com/samber/lo"
+	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -69,9 +71,6 @@ func (c *Controller) Reconcile(ctx context.Context, np *v1.NodePool) (reconcile.
 	if !nodepoolutils.IsManaged(np, c.cloudProvider) {
 		return reconcile.Result{}, nil
 	}
-	if !np.StatusConditions().Root().IsTrue() {
-		return reconcile.Result{}, nil
-	}
 	if np.Spec.Replicas == nil {
 		return reconcile.Result{}, nil
 	}
@@ -105,6 +104,7 @@ func (c *Controller) Reconcile(ctx context.Context, np *v1.NodePool) (reconcile.
 	// rsumukha@ todo : Be more intelligent about picking candidates (SimulateScheduling and get a list)
 	candidates := GetDeprovisioningCandidates(ctx, c.kubeClient, npStateNodes, int(nodesToTerminate))
 
+	var scaleDownErrs []error
 	actualTerminatedCount := 0
 	// Terminate selected NodeClaims
 	for _, candidate := range candidates {
@@ -113,6 +113,7 @@ func (c *Controller) Reconcile(ctx context.Context, np *v1.NodePool) (reconcile.
 			return c.kubeClient.Delete(ctx, nodeClaim)
 		}); err != nil && client.IgnoreNotFound(err) != nil {
 			log.FromContext(ctx).Error(err, "failed to delete NodeClaim", "NodeClaim", klog.KObj(nodeClaim))
+			scaleDownErrs = append(scaleDownErrs, err)
 			continue
 		}
 		actualTerminatedCount++
@@ -128,7 +129,10 @@ func (c *Controller) Reconcile(ctx context.Context, np *v1.NodePool) (reconcile.
 		Info("scaled down static nodepool", "current", currentNodes, "desired", desiredReplicas, "terminated", actualTerminatedCount)
 
 	if actualTerminatedCount != int(nodesToTerminate) {
-		return reconcile.Result{RequeueAfter: time.Second}, nil
+		return reconcile.Result{RequeueAfter: time.Second}, serrors.Wrap(
+			errors.NewAggregate(scaleDownErrs),
+			"reason", TerminationReason,
+		)
 	}
 
 	return reconcile.Result{}, nil

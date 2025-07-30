@@ -37,7 +37,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/apis"
 	v1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/fake"
-	"sigs.k8s.io/karpenter/pkg/controllers/deprovisioning/static"
+	"sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/deprovisioning/static"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/controllers/state/informer"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -499,7 +499,7 @@ var _ = Describe("Static Deprovisioning Controller", func() {
 				ExpectApplied(ctx, env.Client, nodeClaims[0])
 
 				result, err := failingController.Reconcile(ctx, nodePool)
-				Expect(err).ToNot(HaveOccurred())
+				Expect(err).To(HaveOccurred())
 
 				// Should requeue because not all nodeclaims were successfully deleted
 				Expect(result.RequeueAfter).To(Equal(time.Second))
