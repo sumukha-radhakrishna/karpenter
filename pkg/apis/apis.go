@@ -36,7 +36,7 @@ var (
 	NodeClaimCRD []byte
 	//go:embed crds/karpenter.sh_nodeoverlays.yaml
 	NodeOverlayCRD []byte
-	//go:embed crds/autoscaling.x-k8s.io_capacitybuffers.yaml
+	//go:embed crds/karpenter.sh_capacitybuffers.yaml
 	CapacityBufferCRD []byte
 	CRDs              = []*apiextensionsv1.CustomResourceDefinition{
 		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodePoolCRD),
