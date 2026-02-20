@@ -34,5 +34,7 @@ func init() {
 	scheme.Scheme.AddKnownTypes(gv,
 		&NodeOverlay{},
 		&NodeOverlayList{},
+		&CapacityBuffer{},
+		&CapacityBufferList{},
 	)
 }
