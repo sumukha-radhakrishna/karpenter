@@ -20,6 +20,7 @@ import (
 	"context"
 	"time"
 
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -50,18 +51,15 @@ func (c *Controller) Name() string {
 
 func (c *Controller) Reconcile(ctx context.Context, cb *v1alpha1.CapacityBuffer) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, c.Name())
-	logger := log.FromContext(ctx)
 
-	logger.Info("reconciling capacity buffer", "name", cb.Name, "namespace", cb.Namespace)
-
+	log.FromContext(ctx).Info("reconciling Capacity buffers")
 	// TODO: Implement actual buffer provisioning logic here
 	// For now, just log the buffer details
-	if cb.Spec.Replicas != nil {
-		logger.Info("capacity buffer details", "replicas", *cb.Spec.Replicas)
-	}
-	if cb.Spec.Percentage != nil {
-		logger.Info("capacity buffer details", "percentage", *cb.Spec.Percentage)
-	}
+	log.FromContext(ctx).Info("Capacity Buffer", "name", cb.Name, "replicas", cb.Spec.Replicas)
+	cb.Status.Conditions = append(cb.Status.Conditions, v1.Condition{
+		Type:   "Ready",
+		Status: "True",
+	})
 
 	return reconcile.Result{RequeueAfter: time.Minute}, nil
 }
